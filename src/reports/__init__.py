@@ -1,0 +1,1 @@
+"""Automated attribution report generation."""

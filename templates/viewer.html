@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Methane Prosecution Engine</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      display: flex; height: 100vh; overflow: hidden;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 13px; background: #0f1117; color: #d4d8e1;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 380px; min-width: 380px; height: 100vh;
+      background: #161b27; display: flex; flex-direction: column;
+      border-right: 1px solid #232b3e; z-index: 1000; overflow: hidden;
+    }
+    #sidebar-inner {
+      flex: 1; overflow-y: auto; padding: 16px;
+      scrollbar-width: thin; scrollbar-color: #2e3a55 transparent;
+    }
+    #sidebar-inner::-webkit-scrollbar { width: 5px; }
+    #sidebar-inner::-webkit-scrollbar-thumb { background: #2e3a55; border-radius: 3px; }
+
+    .app-title { font-size: 16px; font-weight: 700; color: #00ff88; letter-spacing: 0.3px; }
+    .app-subtitle { font-size: 11px; color: #6b7a99; margin-bottom: 14px; }
+
+    .form-group { margin-bottom: 10px; }
+    label {
+      display: block; font-size: 10px; font-weight: 600; color: #6b7a99;
+      text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px;
+    }
+    select, input[type="number"] {
+      width: 100%; background: #0f1117; border: 1px solid #2e3a55;
+      border-radius: 6px; color: #d4d8e1; padding: 7px 10px; font-size: 13px; outline: none;
+    }
+    select:focus, input:focus { border-color: #00ff88; }
+    select option { background: #161b27; }
+
+    .aoi-hint { font-size: 11px; color: #6b7a99; font-style: italic; margin-bottom: 4px; }
+    .aoi-display {
+      background: #0f1117; border: 1px solid #2e3a55; border-radius: 6px;
+      padding: 7px 10px; font-size: 11px; color: #6b7a99; font-family: monospace;
+      min-height: 28px; word-break: break-all;
+    }
+    .aoi-display.has-aoi { color: #00ff88; border-color: #00885a; }
+
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    button {
+      border: none; border-radius: 6px; padding: 9px 12px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    #btn-scan { background: #00aa66; color: #fff; }
+    #btn-scan:hover:not(:disabled) { background: #00cc77; }
+    #btn-scan:disabled { background: #2e3a55; color: #6b7a99; cursor: not-allowed; }
+    #btn-clear { background: #1c2333; color: #d4d8e1; border: 1px solid #2e3a55; }
+    #btn-clear:hover { background: #232b3e; }
+
+    .divider { border: none; border-top: 1px solid #232b3e; margin: 12px 0; }
+
+    /* Stats bar */
+    .stats-bar {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 12px;
+    }
+    .stat-box {
+      background: #0f1117; border: 1px solid #2e3a55; border-radius: 6px;
+      padding: 8px; text-align: center;
+    }
+    .stat-value { font-size: 18px; font-weight: 700; color: #00ff88; }
+    .stat-label { font-size: 9px; color: #6b7a99; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Results */
+    .results-header {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer;
+    }
+    .results-label { font-size: 11px; font-weight: 600; color: #6b7a99; text-transform: uppercase; }
+    .results-badge {
+      background: #00aa66; color: #fff; font-size: 10px; font-weight: 700;
+      padding: 2px 7px; border-radius: 10px; display: none;
+    }
+    #results-list { display: flex; flex-direction: column; gap: 6px; }
+
+    /* Emitter card */
+    .emitter-card {
+      display: flex; align-items: stretch; gap: 10px; background: #1c2333;
+      border: 1px solid #2e3a55; border-radius: 8px; padding: 10px;
+      cursor: pointer; transition: border-color 0.15s, background 0.15s;
+    }
+    .emitter-card:hover { border-color: #00aa66; background: #1f2738; }
+    .emitter-card.selected { border-color: #00ff88; background: #1a2a30; }
+
+    .emitter-rank {
+      display: flex; align-items: center; justify-content: center;
+      min-width: 28px; font-size: 14px; font-weight: 700; color: #6b7a99;
+    }
+    .emitter-info { flex: 1; min-width: 0; }
+    .emitter-id { font-size: 11px; color: #8899bb; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .emitter-rate { font-size: 16px; font-weight: 700; margin: 2px 0; }
+    .emitter-meta { font-size: 11px; color: #6b7a99; display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .priority-badge {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      padding: 2px 6px; border-radius: 4px; text-transform: uppercase;
+    }
+    .priority-critical { background: #ff2244; color: #fff; }
+    .priority-high     { background: #ff8800; color: #fff; }
+    .priority-medium   { background: #ddaa00; color: #000; }
+    .priority-low      { background: #2e3a55; color: #8899bb; }
+    .priority-watch    { background: #1c2333; color: #6b7a99; }
+
+    .rate-critical { color: #ff4466; }
+    .rate-high     { color: #ff8844; }
+    .rate-medium   { color: #ffcc44; }
+    .rate-low      { color: #88aa88; }
+
+    .corr-badge {
+      font-size: 10px; font-weight: 600; padding: 1px 5px;
+      border-radius: 3px; background: #232b3e; color: #7eb3ff;
+    }
+
+    /* Detail panel */
+    #detail-panel {
+      display: none; background: #0f1117; border: 1px solid #232b3e;
+      border-radius: 8px; margin-top: 10px; overflow: hidden;
+    }
+    #detail-panel.visible { display: block; }
+    #detail-img { width: 100%; display: block; background: #0d1117; min-height: 200px; }
+    #detail-body { padding: 12px; }
+    .detail-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+    .detail-label { color: #6b7a99; }
+    .detail-value { color: #d4d8e1; font-weight: 600; font-family: monospace; }
+    .detail-value.green { color: #00ff88; }
+    .detail-value.red { color: #ff4466; }
+
+    /* Map */
+    #map-wrap { flex: 1; position: relative; }
+    #map { width: 100%; height: 100%; }
+
+    .status-msg { text-align: center; padding: 20px; color: #6b7a99; }
+    .spinner {
+      display: inline-block; width: 14px; height: 14px; border: 2px solid #2e3a55;
+      border-top-color: #00ff88; border-radius: 50%; animation: spin 0.8s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Leaflet popup overrides */
+    .leaflet-popup-content-wrapper { background: #161b27; color: #d4d8e1; border-radius: 8px; }
+    .leaflet-popup-tip { background: #161b27; }
+    .leaflet-popup-content { font-size: 12px; font-family: monospace; }
+
+    /* Mobile toggle */
+    #sidebar-toggle {
+      display: none; position: absolute; top: 10px; left: 10px; z-index: 1100;
+      background: #161b27; border: 1px solid #232b3e; border-radius: 6px;
+      color: #d4d8e1; padding: 8px 12px; cursor: pointer; font-size: 18px;
+    }
+    @media (max-width: 900px) {
+      #sidebar { position: absolute; left: -380px; transition: left 0.3s; }
+      #sidebar.open { left: 0; }
+      #sidebar-toggle { display: block; }
+    }
+  </style>
+</head>
+<body>
+
+<button id="sidebar-toggle">&#9776;</button>
+
+<div id="sidebar">
+  <div id="sidebar-inner">
+    <div class="app-title">Methane Prosecution Engine</div>
+    <div class="app-subtitle">Turn spectral signatures into legal evidence</div>
+
+    <div class="form-group">
+      <label>Preset Region</label>
+      <select id="region-select">
+        <option value="">— Draw on map or select —</option>
+        <option value="-104.5,31.0,-103.0,32.5">Permian Basin, TX/NM</option>
+        <option value="-110.5,39.5,-108.5,41.0">Uinta Basin, UT</option>
+        <option value="-108.0,37.0,-107.0,38.0">San Juan Basin, CO/NM</option>
+        <option value="-80.5,39.5,-79.5,40.5">Appalachian Basin, WV</option>
+        <option value="-98.0,35.5,-96.5,36.5">Anadarko Basin, OK</option>
+        <option value="51.0,25.0,52.5,26.5">Persian Gulf, UAE/Qatar</option>
+        <option value="46.0,28.0,49.0,30.5">Ghawar Field, Saudi Arabia</option>
+        <option value="68.0,55.0,78.0,62.0">W. Siberia, Russia</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <div class="aoi-hint">Or draw a rectangle on the map</div>
+      <div class="aoi-display" id="aoi-display">No area selected</div>
+    </div>
+
+    <div class="form-group">
+      <label>Min emission rate (kg CH₄/hr)</label>
+      <input type="number" id="min-rate" value="0" min="0" step="10"/>
+    </div>
+
+    <div class="form-group">
+      <label>Synthetic emitters to generate</label>
+      <input type="number" id="n-emitters" value="30" min="5" max="100" step="5"/>
+    </div>
+
+    <div class="btn-row">
+      <button id="btn-scan">Scan Region</button>
+      <button id="btn-clear">Clear</button>
+    </div>
+
+    <hr class="divider"/>
+
+    <!-- Stats -->
+    <div class="stats-bar" id="stats-bar" style="display:none;">
+      <div class="stat-box">
+        <div class="stat-value" id="stat-emitters">0</div>
+        <div class="stat-label">Emitters</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-critical">0</div>
+        <div class="stat-label">Critical</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-co2e">0</div>
+        <div class="stat-label">ktCO₂e/yr</div>
+      </div>
+    </div>
+
+    <!-- Results list -->
+    <div class="results-header" id="results-toggle">
+      <span class="results-label">Prosecution Queue</span>
+      <span class="results-badge" id="results-badge">0</span>
+      <span id="results-chevron" style="color:#6b7a99;font-size:10px;">&#9660;</span>
+    </div>
+    <div id="results-list">
+      <div class="status-msg">Select a region and click Scan</div>
+    </div>
+
+    <!-- Detail panel -->
+    <div id="detail-panel">
+      <img id="detail-img" alt="Plume visualization"/>
+      <div id="detail-body"></div>
+    </div>
+  </div>
+</div>
+
+<div id="map-wrap">
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script>
+// ── Map setup ─────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true }).setView([31.7, -103.7], 7);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OSM &copy; CARTO',
+  subdomains: 'abcd', maxZoom: 19,
+}).addTo(map);
+
+// Draw control
+const drawnItems = new L.FeatureGroup().addTo(map);
+const drawControl = new L.Control.Draw({
+  draw: {
+    rectangle: { shapeOptions: { color: '#00ff88', weight: 2, fillOpacity: 0.08 } },
+    polygon: false, polyline: false, circle: false, marker: false, circlemarker: false,
+  },
+  edit: { featureGroup: drawnItems },
+});
+map.addControl(drawControl);
+
+let currentBbox = null;
+let emitterMarkers = [];
+let selectedId = null;
+
+const aoiDisplay = document.getElementById('aoi-display');
+const btnScan = document.getElementById('btn-scan');
+const btnClear = document.getElementById('btn-clear');
+
+// ── AOI handling ──────────────────────────────────────────────────────────
+function setAOI(bbox) {
+  currentBbox = bbox;
+  aoiDisplay.textContent = bbox.map(v => v.toFixed(3)).join(', ');
+  aoiDisplay.classList.add('has-aoi');
+  btnScan.disabled = false;
+}
+
+function clearAOI() {
+  currentBbox = null;
+  aoiDisplay.textContent = 'No area selected';
+  aoiDisplay.classList.remove('has-aoi');
+  btnScan.disabled = true;
+  drawnItems.clearLayers();
+}
+
+map.on(L.Draw.Event.CREATED, function(e) {
+  drawnItems.clearLayers();
+  drawnItems.addLayer(e.layer);
+  const b = e.layer.getBounds();
+  setAOI([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+});
+
+// Preset regions
+document.getElementById('region-select').addEventListener('change', function() {
+  if (!this.value) return;
+  const parts = this.value.split(',').map(Number);
+  drawnItems.clearLayers();
+  const rect = L.rectangle([[parts[1], parts[0]], [parts[3], parts[2]]], {
+    color: '#00ff88', weight: 2, fillOpacity: 0.08,
+  });
+  drawnItems.addLayer(rect);
+  setAOI(parts);
+  map.fitBounds([[parts[1], parts[0]], [parts[3], parts[2]]], { padding: [30, 30] });
+});
+
+btnClear.addEventListener('click', function() {
+  clearAOI();
+  clearResults();
+  document.getElementById('region-select').value = '';
+});
+
+// ── Scan ──────────────────────────────────────────────────────────────────
+btnScan.addEventListener('click', doScan);
+
+async function doScan() {
+  if (!currentBbox) return;
+  showLoading();
+  btnScan.disabled = true;
+
+  try {
+    const resp = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bbox: currentBbox,
+        min_rate: parseFloat(document.getElementById('min-rate').value) || 0,
+        n_emitters: parseInt(document.getElementById('n-emitters').value) || 30,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+    renderResults(data);
+  } catch (err) {
+    document.getElementById('results-list').innerHTML =
+      `<div class="status-msg" style="color:#ff4466;">&#9888; ${esc(err.message)}</div>`;
+  } finally {
+    btnScan.disabled = !currentBbox;
+  }
+}
+
+function showLoading() {
+  document.getElementById('results-list').innerHTML =
+    '<div class="status-msg"><span class="spinner"></span>Scanning for emitters…</div>';
+  document.getElementById('stats-bar').style.display = 'none';
+  document.getElementById('detail-panel').classList.remove('visible');
+}
+
+function clearResults() {
+  document.getElementById('results-list').innerHTML =
+    '<div class="status-msg">Select a region and click Scan</div>';
+  document.getElementById('stats-bar').style.display = 'none';
+  document.getElementById('results-badge').style.display = 'none';
+  document.getElementById('detail-panel').classList.remove('visible');
+  emitterMarkers.forEach(m => map.removeLayer(m));
+  emitterMarkers = [];
+  selectedId = null;
+}
+
+// ── Render results ────────────────────────────────────────────────────────
+function renderResults(data) {
+  const { features, stats } = data;
+
+  // Clear old markers
+  emitterMarkers.forEach(m => map.removeLayer(m));
+  emitterMarkers = [];
+  selectedId = null;
+
+  // Stats
+  document.getElementById('stat-emitters').textContent = stats.total_fused_detections;
+  document.getElementById('stat-critical').textContent = stats.by_priority.critical || 0;
+  document.getElementById('stat-co2e').textContent =
+    Math.round(stats.total_annualized_co2e_tonnes / 1000).toLocaleString();
+  document.getElementById('stats-bar').style.display = 'grid';
+
+  // Badge
+  const badge = document.getElementById('results-badge');
+  badge.textContent = features.length;
+  badge.style.display = 'inline-block';
+
+  // List
+  const list = document.getElementById('results-list');
+  list.innerHTML = '';
+
+  if (!features.length) {
+    list.innerHTML = '<div class="status-msg">No emitters found. Try a wider area or lower threshold.</div>';
+    return;
+  }
+
+  features.forEach((f, i) => {
+    // Map marker
+    const color = markerColor(f.priority);
+    const radius = Math.max(5, Math.min(20, Math.sqrt(f.rate_kg_h) / 2));
+    const marker = L.circleMarker([f.lat, f.lon], {
+      radius, color, fillColor: color, fillOpacity: 0.7, weight: 1.5,
+    }).addTo(map);
+    marker.bindTooltip(
+      `<b>${f.rate_kg_h.toLocaleString()} kg/hr</b><br>${f.priority.toUpperCase()} · ${f.corroboration}`,
+      { className: '', direction: 'top' }
+    );
+    marker.on('click', () => selectEmitter(f));
+    emitterMarkers.push(marker);
+
+    // Sidebar card
+    const card = document.createElement('div');
+    card.className = 'emitter-card';
+    card.dataset.id = f.id;
+    card.innerHTML = `
+      <div class="emitter-rank">#${i + 1}</div>
+      <div class="emitter-info">
+        <div class="emitter-id">${esc(f.id)}</div>
+        <div class="emitter-rate ${rateClass(f.rate_kg_h)}">
+          ${f.rate_kg_h.toLocaleString()} kg/hr
+          <span class="priority-badge priority-${f.priority}">${f.priority}</span>
+        </div>
+        <div class="emitter-meta">
+          <span>${f.co2e_tonnes.toLocaleString()} tCO₂e/yr</span>
+          <span class="corr-badge">${f.corroboration} · ${f.sensors}s</span>
+          <span>${(f.confidence * 100).toFixed(0)}%</span>
+        </div>
+      </div>`;
+    card.addEventListener('click', () => selectEmitter(f));
+    list.appendChild(card);
+  });
+}
+
+function selectEmitter(f) {
+  selectedId = f.id;
+
+  // Highlight card
+  document.querySelectorAll('.emitter-card').forEach(c => {
+    c.classList.toggle('selected', c.dataset.id === f.id);
+  });
+
+  // Pan map
+  map.setView([f.lat, f.lon], Math.max(map.getZoom(), 10));
+
+  // Show detail panel
+  const panel = document.getElementById('detail-panel');
+  panel.classList.add('visible');
+
+  const img = document.getElementById('detail-img');
+  img.src = `/api/plume/${encodeURIComponent(f.id)}.png?lon=${f.lon}&lat=${f.lat}&rate=${f.rate_kg_h}`;
+
+  const body = document.getElementById('detail-body');
+  body.innerHTML = `
+    <div class="detail-row"><span class="detail-label">Detection</span><span class="detail-value">${esc(f.id)}</span></div>
+    <div class="detail-row"><span class="detail-label">Location</span><span class="detail-value">${f.lat.toFixed(4)}°N, ${Math.abs(f.lon).toFixed(4)}°W</span></div>
+    <div class="detail-row"><span class="detail-label">Emission Rate</span><span class="detail-value red">${f.rate_kg_h.toLocaleString()} ± ${(f.uncertainty_kg_h || 0).toLocaleString()} kg CH₄/hr</span></div>
+    <div class="detail-row"><span class="detail-label">Annualized</span><span class="detail-value">${f.annualized_tonnes.toLocaleString()} t CH₄/yr</span></div>
+    <div class="detail-row"><span class="detail-label">CO₂ Equivalent</span><span class="detail-value red">${f.co2e_tonnes.toLocaleString()} t CO₂e/yr (GWP-20)</span></div>
+    <div class="detail-row"><span class="detail-label">Corroboration</span><span class="detail-value green">${f.corroboration.toUpperCase()} (${f.sensors} sensors)</span></div>
+    <div class="detail-row"><span class="detail-label">Confidence</span><span class="detail-value green">${(f.confidence * 100).toFixed(1)}%</span></div>
+    <div class="detail-row"><span class="detail-label">Spectral Confirmed</span><span class="detail-value ${f.spectral_confirmed ? 'green' : ''}">${f.spectral_confirmed ? 'YES' : 'NO'}</span></div>
+    <div class="detail-row"><span class="detail-label">Persistence</span><span class="detail-value">${f.persistence_days || 'N/A'} days</span></div>
+    <div class="detail-row"><span class="detail-label">Area Flux</span><span class="detail-value">${f.area_flux ? f.area_flux + ' kg/km²/hr' : 'N/A'}</span></div>
+    <div class="detail-row"><span class="detail-label">Priority Score</span><span class="detail-value green">${f.priority_score.toFixed(3)}</span></div>
+    <div class="detail-row"><span class="detail-label">Score Breakdown</span><span class="detail-value" style="font-size:10px;">E:${f.scores.emission.toFixed(2)} V:${f.scores.evidence.toFixed(2)} P:${f.scores.persistence.toFixed(2)} I:${f.scores.impact.toFixed(2)}</span></div>
+  `;
+
+  // Scroll card into view
+  const card = document.querySelector(`.emitter-card[data-id="${f.id}"]`);
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function markerColor(priority) {
+  return { critical: '#ff2244', high: '#ff8800', medium: '#ddaa00', low: '#556677', watch: '#334455' }[priority] || '#556677';
+}
+
+function rateClass(rate) {
+  if (rate >= 1000) return 'rate-critical';
+  if (rate >= 500)  return 'rate-high';
+  if (rate >= 100)  return 'rate-medium';
+  return 'rate-low';
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Toggle results list
+document.getElementById('results-toggle').addEventListener('click', function() {
+  const list = document.getElementById('results-list');
+  const chev = document.getElementById('results-chevron');
+  if (list.style.display === 'none') {
+    list.style.display = '';
+    chev.innerHTML = '&#9660;';
+  } else {
+    list.style.display = 'none';
+    chev.innerHTML = '&#9654;';
+  }
+});
+
+// Sidebar toggle (mobile)
+document.getElementById('sidebar-toggle').addEventListener('click', function() {
+  document.getElementById('sidebar').classList.toggle('open');
+});
+</script>
+</body>
+</html>
