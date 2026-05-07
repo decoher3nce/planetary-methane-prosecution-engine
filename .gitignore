@@ -7,3 +7,4 @@ fusion_visualization.png
 *.png
 !templates/*.png
 .claude/
+.DS_Store
